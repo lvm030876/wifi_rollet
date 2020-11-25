@@ -62,7 +62,7 @@ const char* homeIndex = R"=====(
 		</div>
 		<div class='block menu'>
 			<div></div>
-			<button onclick="location.href = '/ip.htm'">wifi нал.</button>
+			<div></div>
 			<button onclick="location.href = '/rf.htm'">rf нал.</button>
 		</div>
 		<div class='block footer'>

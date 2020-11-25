@@ -5,6 +5,7 @@ RellayClass rellay;
 Ticker blinker, sensor, stopAll;
 ESP8266WebServer HTTP(80);
 RCSwitch mySwitch = RCSwitch();
+WiFiUDP udp;
 
 void setup() {
 	debugSerial.begin(115200);
@@ -33,6 +34,7 @@ void setup() {
 	if (MDNS.begin("iot_home", WiFi.localIP())) {
 		debugSerial.println("MDNS responder started");
 	}
+	udp.begin(8266);
 	blinker.detach();
 	digitalWrite(LED_PIN, HIGH);
 	startServer();
@@ -41,9 +43,33 @@ void setup() {
 void loop() {
 	HTTP.handleClient();
 	MDNS.update();
+	int packetSize = udp.parsePacket();
+	if(packetSize) {
+		char packetBuffer[10];
+		udp.read(packetBuffer, 10);
+		String udpRead = packetBuffer;
+		if (udpRead.indexOf("Who") != -1){
+			char IP[] = "xxx.xxx.xxx.xxx";
+			WiFi.localIP().toString().toCharArray(IP, 16);
+			// IPAddress broadcastIp(192,168,1,255);
+			IPAddress broadcastIp = WiFi.localIP();
+			broadcastIp[3] = 255;
+			udp.beginPacket(broadcastIp, 8266);
+			udp.write("rollet: ");
+			udp.write(IP);
+			udp.endPacket();
+		}
+	}
 }
 
 void sensorTik() {
+	// if (udpTick++ > 100){
+	// 	udpTick = 0;
+	// 	IPAddress broadcastIp(192,168,1,255);
+	// 	udp.beginPacket(broadcastIp, 8266);
+	// 	udp.write("rollet: ");
+	// 	udp.endPacket();
+	// }
 	if (alarmStat1 == 0) alarmStat1 = digitalRead(ALARM_1);
 	if (alarmStat2 == 0) alarmStat2 = digitalRead(ALARM_2);
 	if (digitalRead(RESET_PIN) == 0) {
@@ -71,6 +97,7 @@ void smart_res() {
 	WiFi.disconnect(true);
 	eepromapi.eeprom_clr();
 	delay(5000);
+	ESP.eraseConfig();
 	ESP.reset();
 }
 
@@ -81,6 +108,7 @@ void startServer() {
 	HTTP.on("/resalarm", HTTP_GET, reset_alarm);
 	HTTP.on("/switch.xml", HTTP_GET, switch_xml);
 	HTTP.on("/switch.json", HTTP_GET, switch_json);
+	HTTP.on("/rf.json", HTTP_GET, rf_json);
 	HTTP.on("/rf.xml", HTTP_GET, rf_xml);
     HTTP.on("/rf.htm", HTTP_GET, [](){HTTP.send(200, "text/html", rfIndex);});
     HTTP.on("/ip.htm", HTTP_GET, [](){HTTP.send(200, "text/html", ipIndex);});
@@ -148,6 +176,17 @@ void switch_json() {
 		+ ",\"RSSI\":" + WiFi.RSSI()
 		+ "}}";	
 	HTTP.send(200,"application/json",relayJson);
+}
+
+void rf_json() {
+	IOTconfig customVar = eepromapi.eeprom_get();
+	String rfJson = "{\"rf\": {\"rfCode\":"
+		+ String(rfCode, DEC)
+		+ ",\"rfUp\":" + customVar.rfUp
+		+ ",\"rfDown\":" + customVar.rfDown
+		+ ",\"rfStop\":" + customVar.rfStop
+		+ "}}";	
+	HTTP.send(200,"application/json",rfJson);
 }
 
 void reset_alarm() {

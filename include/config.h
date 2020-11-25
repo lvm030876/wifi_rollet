@@ -13,6 +13,7 @@
 #include "index.h"
 #include "ipstat.h"
 #include "rfstat.h"
+#include <WiFiUdp.h>
 
 
 // #define PROGMEM   ICACHE_RODATA_ATTR
@@ -29,7 +30,7 @@ void smart_res();
 void switch_xml();
 void switch_json();
 void rf_xml();
-// void rf_json();
+void rf_json();
 void reset_alarm();
 void switch_web();
 void mem_set();
@@ -39,6 +40,7 @@ void stop_all(String todo);
 int alarmStat1, alarmStat2;
 unsigned long rfCode;
 int resetTick = 0;  // 
+int udpTick = 0;  // 
 
 const char* upgradeIndex = R"=====(<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>)=====";
 
