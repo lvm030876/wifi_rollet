@@ -1,6 +1,3 @@
-#ifndef ipstat_h
-#define ipstat_h
-
 const char* ipIndex = R"=====(
 <!DOCTYPE html>
 <html>
@@ -60,4 +57,3 @@ const char* ipIndex = R"=====(
 	</body>
 </html>
 )=====";
-#endif

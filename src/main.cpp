@@ -1,10 +1,42 @@
-#include "config.h"
+#include <ESP8266mDNS.h>
+#include "Ticker.h"
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266httpUpdate.h>
+#include "WiFiManager.h"
+#include <WiFiUdp.h>
+#include "eepromapi.h"
+#include "relay.h"
+#include "rfreceive.h"
+#include "INDEXhtm.h"
+#include "IPhtm.h"
+#include "RFhtm.h"
+#include "HELPhtm.h"
+
+#define LED_PIN     2
+#define RESET_PIN   0
+#define ALARM_1     5
+#define ALARM_2     4
+#define debugSerial Serial1
+
+int alarmStat1, alarmStat2;
+unsigned long rfCode;
+int resetTick = 0;
+int udpTick = 0;
+
+const char* upgradeIndex = R"=====(<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>)=====";
 
 EepromClass eepromapi;
 RellayClass rellay;
 Ticker blinker, sensor, stopAll;
 ESP8266WebServer HTTP(80);
 WiFiUDP udp;
+
+void sensorTik(void);
+void tickBlink(void);
+void smart_res(void);
+void startServer(void);
+void stop_all(String todo);
 
 void setup() {
 	debugSerial.begin(115200);
@@ -57,6 +89,13 @@ void loop() {
 			udp.endPacket();
 		}
 	}
+	rfCode = rf_loop();
+	if (rfCode > 0) {
+		IOTconfig customVar = eepromapi.eeprom_get();
+		if (rfCode == customVar.rfUp)  stop_all("up");
+		if (rfCode == customVar.rfStop)  stop_all("stop");
+		if (rfCode == customVar.rfDown)  stop_all("down");
+	}
 }
 
 void sensorTik() {
@@ -65,13 +104,6 @@ void sensorTik() {
 	if (digitalRead(RESET_PIN) == 0) {
 		if (resetTick++ > 100) smart_res();
 	} else resetTick = 0;
-	rfCode = rf_loop();
-	if (rfCode > 0) {
-		IOTconfig customVar = eepromapi.eeprom_get();
-		if (rfCode == customVar.rfUp)  stop_all("up");
-		if (rfCode == customVar.rfStop)  stop_all("stop");
-		if (rfCode == customVar.rfDown)  stop_all("down");
-	}
 }
 
 void tickBlink() {
@@ -205,4 +237,50 @@ void mem_set() {
 		flag = true;
 	}
 	if (flag) eepromapi.eeprom_set(customVar);
+}
+
+void startServer() {
+    HTTP.on("/", HTTP_GET, [](){HTTP.send(200, "text/html", homeIndex);});
+    HTTP.on("/style.css", HTTP_GET, [](){HTTP.send(200, "text/css", style);});
+	HTTP.on("/switch", HTTP_GET, switch_web);
+	HTTP.on("/resalarm", HTTP_GET, reset_alarm);
+	HTTP.on("/switch.xml", HTTP_GET, switch_xml);
+	HTTP.on("/switch.json", HTTP_GET, switch_json);
+	HTTP.on("/rf.json", HTTP_GET, rf_json);
+	HTTP.on("/rf.xml", HTTP_GET, rf_xml);
+    HTTP.on("/rf.htm", HTTP_GET, [](){HTTP.send(200, "text/html", rfIndex);});
+    HTTP.on("/ip.htm", HTTP_GET, [](){HTTP.send(200, "text/html", ipIndex);});
+    HTTP.on("/help.htm", HTTP_GET, [](){HTTP.send(200, "text/html", helpIndex);});
+	HTTP.on("/mem", HTTP_GET, mem_set);
+	HTTP.on("/default", HTTP_GET, smart_res);
+    HTTP.on("/upgrade", HTTP_GET, [](){HTTP.send(200, "text/html", upgradeIndex);});
+    HTTP.on("/update", HTTP_POST, [](){
+		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
+		delay(5000);
+		ESP.restart();
+		delay(500);
+    },[](){
+		HTTPUpload& upload = HTTP.upload();
+		if(upload.status == UPLOAD_FILE_START){
+			debugSerial.setDebugOutput(true);
+			debugSerial.printf("Update: %s\n", upload.filename.c_str());
+			uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+			if(!Update.begin(maxSketchSpace)){
+				Update.printError(debugSerial);
+			}
+		} else if(upload.status == UPLOAD_FILE_WRITE){
+			if(Update.write(upload.buf, upload.currentSize) != upload.currentSize){
+				Update.printError(debugSerial);
+			}
+		} else if(upload.status == UPLOAD_FILE_END){
+			if(Update.end(true)){
+				debugSerial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
+			} else {
+				Update.printError(debugSerial);
+			}
+			debugSerial.setDebugOutput(false);
+		}
+		yield();
+    });
+	HTTP.begin();
 }

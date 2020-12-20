@@ -1,6 +1,3 @@
-#ifndef index_h
-#define index_h
-
 const char* homeIndex = R"=====(
 <!DOCTYPE html>
 <html>
@@ -208,4 +205,3 @@ font-size: 16px;
 color: #333;
 }
 )=====";
-#endif
