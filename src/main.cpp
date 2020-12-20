@@ -4,7 +4,6 @@ EepromClass eepromapi;
 RellayClass rellay;
 Ticker blinker, sensor, stopAll;
 ESP8266WebServer HTTP(80);
-RCSwitch mySwitch = RCSwitch();
 WiFiUDP udp;
 
 void setup() {
@@ -15,7 +14,6 @@ void setup() {
 	pinMode(RESET_PIN, INPUT);
 	pinMode(ALARM_1, INPUT_PULLUP);
 	pinMode(ALARM_2, INPUT_PULLUP);
-	mySwitch.enableReceive(SEN_PIN);
 	eepromapi.eeprom_init();
 	sensor.attach(0.1, sensorTik);
 	WiFiManager wifiManager;
@@ -51,7 +49,6 @@ void loop() {
 		if (udpRead.indexOf("Who") != -1){
 			char IP[] = "xxx.xxx.xxx.xxx";
 			WiFi.localIP().toString().toCharArray(IP, 16);
-			// IPAddress broadcastIp(192,168,1,255);
 			IPAddress broadcastIp = WiFi.localIP();
 			broadcastIp[3] = 255;
 			udp.beginPacket(broadcastIp, 8266);
@@ -63,27 +60,17 @@ void loop() {
 }
 
 void sensorTik() {
-	// if (udpTick++ > 100){
-	// 	udpTick = 0;
-	// 	IPAddress broadcastIp(192,168,1,255);
-	// 	udp.beginPacket(broadcastIp, 8266);
-	// 	udp.write("rollet: ");
-	// 	udp.endPacket();
-	// }
 	if (alarmStat1 == 0) alarmStat1 = digitalRead(ALARM_1);
 	if (alarmStat2 == 0) alarmStat2 = digitalRead(ALARM_2);
 	if (digitalRead(RESET_PIN) == 0) {
 		if (resetTick++ > 100) smart_res();
 	} else resetTick = 0;
-	if (mySwitch.available()) {
-		rfCode = mySwitch.getReceivedValue();
-		if (rfCode > 0) {
-			IOTconfig customVar = eepromapi.eeprom_get();
-			if (rfCode == customVar.rfUp)  stop_all("up");
-			if (rfCode == customVar.rfStop)  stop_all("stop");
-			if (rfCode == customVar.rfDown)  stop_all("down");
-		}
-		mySwitch.resetAvailable();
+	rfCode = rf_loop();
+	if (rfCode > 0) {
+		IOTconfig customVar = eepromapi.eeprom_get();
+		if (rfCode == customVar.rfUp)  stop_all("up");
+		if (rfCode == customVar.rfStop)  stop_all("stop");
+		if (rfCode == customVar.rfDown)  stop_all("down");
 	}
 }
 
@@ -99,51 +86,6 @@ void smart_res() {
 	delay(5000);
 	ESP.eraseConfig();
 	ESP.reset();
-}
-
-void startServer() {
-    HTTP.on("/", HTTP_GET, [](){HTTP.send(200, "text/html", homeIndex);});
-    HTTP.on("/style.css", HTTP_GET, [](){HTTP.send(200, "text/css", style);});
-	HTTP.on("/switch", HTTP_GET, switch_web);
-	HTTP.on("/resalarm", HTTP_GET, reset_alarm);
-	HTTP.on("/switch.xml", HTTP_GET, switch_xml);
-	HTTP.on("/switch.json", HTTP_GET, switch_json);
-	HTTP.on("/rf.json", HTTP_GET, rf_json);
-	HTTP.on("/rf.xml", HTTP_GET, rf_xml);
-    HTTP.on("/rf.htm", HTTP_GET, [](){HTTP.send(200, "text/html", rfIndex);});
-    HTTP.on("/ip.htm", HTTP_GET, [](){HTTP.send(200, "text/html", ipIndex);});
-	HTTP.on("/mem", HTTP_GET, mem_set);
-	HTTP.on("/default", HTTP_GET, smart_res);
-    HTTP.on("/upgrade", HTTP_GET, [](){HTTP.send(200, "text/html", upgradeIndex);});
-    HTTP.on("/update", HTTP_POST, [](){
-		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
-		delay(5000);
-		ESP.restart();
-		delay(500);
-    },[](){
-		HTTPUpload& upload = HTTP.upload();
-		if(upload.status == UPLOAD_FILE_START){
-			debugSerial.setDebugOutput(true);
-			debugSerial.printf("Update: %s\n", upload.filename.c_str());
-			uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
-			if(!Update.begin(maxSketchSpace)){
-				Update.printError(debugSerial);
-			}
-		} else if(upload.status == UPLOAD_FILE_WRITE){
-			if(Update.write(upload.buf, upload.currentSize) != upload.currentSize){
-				Update.printError(debugSerial);
-			}
-		} else if(upload.status == UPLOAD_FILE_END){
-			if(Update.end(true)){
-				debugSerial.printf("Update Success: %u\nRebooting...\n", upload.totalSize);
-			} else {
-				Update.printError(debugSerial);
-			}
-			debugSerial.setDebugOutput(false);
-		}
-		yield();
-    });
-	HTTP.begin();
 }
 
 void switch_xml() {
