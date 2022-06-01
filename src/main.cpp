@@ -7,8 +7,9 @@
 #include <WiFiUdp.h>
 #include "eepromapi.h"
 #include "relay.h"
-#include "rfreceive.h"
+#include "RCSwitch.h"
 #include "INDEXhtm.h"
+#include "STYLEcss.h"
 #include "IPhtm.h"
 #include "RFhtm.h"
 #include "HELPhtm.h"
@@ -17,6 +18,7 @@
 #define RESET_PIN   0
 #define ALARM_1     5
 #define ALARM_2     4
+#define SEN_PIN		1	//радіомодуль	1
 #define debugSerial Serial1
 
 int alarmStat1, alarmStat2;
@@ -30,6 +32,7 @@ EepromClass eepromapi;
 RellayClass rellay;
 Ticker blinker, sensor, stopAll;
 ESP8266WebServer HTTP(80);
+RCSwitch mySwitch = RCSwitch();
 WiFiUDP udp;
 
 void sensorTik(void);
@@ -38,24 +41,53 @@ void smart_res(void);
 void startServer(void);
 void stop_all(String todo);
 
-void setup() {
-	debugSerial.begin(115200);
-	debugSerial.println("\n start");
-	pinMode(LED_PIN, OUTPUT);
-	blinker.attach(0.6, tickBlink);
-	pinMode(RESET_PIN, INPUT);
-	pinMode(ALARM_1, INPUT_PULLUP);
-	pinMode(ALARM_2, INPUT_PULLUP);
-	eepromapi.eeprom_init();
-	sensor.attach(0.1, sensorTik);
-	WiFiManager wifiManager;
-	wifiManager.setTimeout(180);
-	wifiManager.setAPCallback([](WiFiManager *myWiFiManager){blinker.attach(0.5, tickBlink);});
-	if (!wifiManager.autoConnect("iot_home")) {
-		debugSerial.println("failed to connect and hit timeout");
-		ESP.reset();
+void hold(const unsigned int &ms) {
+	unsigned long m = millis();
+	while (millis() - m < ms) {
+		yield();
 	}
-	IOTconfig customVar = eepromapi.eeprom_get();
+}
+
+void AP_mode_default(){
+	blinker.attach(3, tickBlink);
+	String nameDev = WiFi.macAddress();
+	nameDev.replace(":", "");
+	nameDev = "ROLLET_" + nameDev;
+	char AP_ssid_default[32]; 
+	nameDev.toCharArray(AP_ssid_default, nameDev.length() + 1);
+	char AP_pass_default[32] = "12345678"; 
+	// int AP_channel_default  = 7;
+	// IPAddress AP_ip_default (10,1,1,1);
+	// IPAddress AP_gtw_default(10,1,1,1);
+	// IPAddress AP_net_default(255,0,0,0);
+
+	WiFi.mode(WIFI_OFF);
+	WiFi.softAP(AP_ssid_default, AP_pass_default);
+	// WiFi.softAP(AP_ssid_default, AP_pass_default, AP_channel_default);
+	// WiFi.setPhyMode(WIFI_PHY_MODE_11N);
+	// WiFi.softAPConfig(AP_ip_default, AP_gtw_default, AP_net_default);
+	digitalWrite(LED_PIN, HIGH);
+}
+
+void STATION_mode(IOTconfig customVar){
+	blinker.attach(0.5, tickBlink);
+	WiFi.mode(WIFI_OFF);
+	WiFi.mode(WIFI_STA);
+	// WiFi.config (STA_IP, STA_DNS, STA_GTW, STA_NET);
+	// String STA_host = "rollet_" + WiFi.macAddress();
+	// WiFi.hostname(STA_host);
+	WiFi.begin(customVar.STA_ssid, customVar.STA_pass);
+	hold(100);
+	while (WiFi.status() != WL_CONNECTED){
+		debugSerial.print(".");
+		if(WiFi.status() == WL_NO_SSID_AVAIL){
+			// TROCA_REDE();
+		}
+		if(WiFi.status() ==  WL_CONNECT_FAILED){
+			// TROCA_REDE();
+		}
+	}
+
 	if (customVar.dhc == 0xaa55) {
 		IPAddress gateway = WiFi.gatewayIP();
 		IPAddress subnet = WiFi.subnetMask();
@@ -64,9 +96,58 @@ void setup() {
 	if (MDNS.begin("iot_home", WiFi.localIP())) {
 		debugSerial.println("MDNS responder started");
 	}
-	udp.begin(8266);
 	blinker.detach();
 	digitalWrite(LED_PIN, HIGH);
+}
+
+void scanwifi_json() {
+	int n = WiFi.scanNetworks();
+	String outStr = "{\"scan\":[";
+	// '{"sacn":[]}'
+	if (n > 0){
+		// '{"sacn":[{"sidd":"lvm1976","rssi":"66666666"},{"sidd":"roll","rssi":"12345678"}]}' 
+		for (int i = 0; i < n; i++){
+			outStr += "{\"ssid\":\"";
+			outStr += WiFi.SSID(i);
+			outStr += "\", ";
+			outStr += "\"mac\":\"";
+			outStr += WiFi.BSSIDstr(i);
+			outStr += "\", ";
+			outStr += "\"channel\":";
+			outStr += WiFi.channel(i);
+			outStr += ", ";
+			outStr += "\"pass\":";
+			outStr += WiFi.encryptionType(i) != ENC_TYPE_NONE ? "true" : "false";
+			outStr += ", ";
+			outStr += "\"hidden\":";
+			outStr += WiFi.isHidden(i)? "true" : "false";
+			outStr += ", ";
+			outStr += "\"rssi\":";
+			outStr += WiFi.RSSI(i);
+			outStr += "}";
+			if ((i + 1) != n) outStr += ", ";
+		}
+	}
+	outStr += "]}";
+	HTTP.send(200,"application/json",outStr);
+	WiFi.scanDelete();
+}
+
+void setup() {
+	debugSerial.begin(115200);
+	debugSerial.println("\n start");
+	pinMode(LED_PIN, OUTPUT);
+	digitalWrite(LED_PIN, LOW);
+	pinMode(RESET_PIN, INPUT);
+	pinMode(ALARM_1, INPUT_PULLUP);
+	pinMode(ALARM_2, INPUT_PULLUP);
+	mySwitch.enableReceive(SEN_PIN);
+	eepromapi.eeprom_init();
+	sensor.attach(0.1, sensorTik);
+	IOTconfig customVar = eepromapi.eeprom_get();
+	if (customVar.wifimode == 0) AP_mode_default();
+	else STATION_mode(customVar);
+	udp.begin(8266);
 	startServer();
 }
 
@@ -89,13 +170,6 @@ void loop() {
 			udp.endPacket();
 		}
 	}
-	rfCode = rf_loop();
-	if (rfCode > 0) {
-		IOTconfig customVar = eepromapi.eeprom_get();
-		if (rfCode == customVar.rfUp)  stop_all("up");
-		if (rfCode == customVar.rfStop)  stop_all("stop");
-		if (rfCode == customVar.rfDown)  stop_all("down");
-	}
 }
 
 void sensorTik() {
@@ -104,6 +178,16 @@ void sensorTik() {
 	if (digitalRead(RESET_PIN) == 0) {
 		if (resetTick++ > 100) smart_res();
 	} else resetTick = 0;
+	if (mySwitch.available()) {
+		rfCode = mySwitch.getReceivedValue();
+		if (rfCode > 0) {
+			IOTconfig customVar = eepromapi.eeprom_get();
+			if (rfCode == customVar.rfUp)  stop_all("up");
+			if (rfCode == customVar.rfStop)  stop_all("stop");
+			if (rfCode == customVar.rfDown)  stop_all("down");
+		}
+		mySwitch.resetAvailable();
+	}
 }
 
 void tickBlink() {
@@ -115,7 +199,7 @@ void smart_res() {
 	debugSerial.println("Reset devise");
 	WiFi.disconnect(true);
 	eepromapi.eeprom_clr();
-	delay(5000);
+	hold(5000);
 	ESP.eraseConfig();
 	ESP.reset();
 }
@@ -154,7 +238,7 @@ void switch_json() {
 
 void rf_json() {
 	IOTconfig customVar = eepromapi.eeprom_get();
-	String rfJson = "{\"rf\": {\"rfCode\":"
+	String rfJson = "{\"rf\": {\"rfNew\":"
 		+ String(rfCode, DEC)
 		+ ",\"rfUp\":" + customVar.rfUp
 		+ ",\"rfDown\":" + customVar.rfDown
@@ -167,17 +251,6 @@ void reset_alarm() {
 	HTTP.send(200,"application/json","{\"status\":\"ok\"}");
 	alarmStat1 = 0;
 	alarmStat2 = 0;
-}
-
-void rf_xml() {
-	IOTconfig customVar = eepromapi.eeprom_get();
-	String relayXml = "<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n<rf>\n\t<rfCode>"
-		+ String(rfCode, DEC)
-		+ "</rfCode>\n\t<rfUp>" + customVar.rfUp
-		+ "</rfUp>\n\t<rfDown>" + customVar.rfDown
-		+ "</rfDown>\n\t<rfStop>" + customVar.rfStop
-		+ "</rfStop>\n</rf>";
-	HTTP.send(200,"text/xml",relayXml);
 }
 
 void stop_all(String todo){
@@ -201,6 +274,7 @@ void switch_web() {
 void mem_set() {
 	int t;
 	boolean flag = false;
+	boolean rst = false;
 	HTTP.send(200,"application/json","{\"status\":\"ok\"}");
 	IOTconfig customVar = eepromapi.eeprom_get();
 	if (HTTP.arg("ipStat") != "") {
@@ -209,10 +283,24 @@ void mem_set() {
 		ip.fromString(HTTP.arg("ipStat"));
 		IPAddress gateway = WiFi.gatewayIP();
 		IPAddress subnet = WiFi.subnetMask();
-		delay(1000);
+		hold(1000);
 		WiFi.config(ip, gateway, subnet);
 		customVar.statIp = ip;
 		customVar.dhc = 0xaa55;
+	}
+	if (HTTP.arg("ssid") != "") {
+		flag = true;
+		String str = HTTP.arg("ssid");
+    	str.toCharArray(customVar.STA_ssid, str.length() + 1);
+		customVar.wifimode = 1;
+		rst = true;
+	}
+	if (HTTP.arg("pass") != "") {
+		flag = true;
+		String str = HTTP.arg("pass");
+    	str.toCharArray(customVar.STA_pass, str.length() + 1);
+		customVar.wifimode = 1;
+		rst = true;
 	}
 	if (HTTP.arg("protTime") != "") {
 		t = HTTP.arg("protTime").toInt();
@@ -237,6 +325,11 @@ void mem_set() {
 		flag = true;
 	}
 	if (flag) eepromapi.eeprom_set(customVar);
+	if (rst) {
+		hold(5000);
+		ESP.restart();
+		hold(500);
+	}
 }
 
 void startServer() {
@@ -246,19 +339,29 @@ void startServer() {
 	HTTP.on("/resalarm", HTTP_GET, reset_alarm);
 	HTTP.on("/switch.xml", HTTP_GET, switch_xml);
 	HTTP.on("/switch.json", HTTP_GET, switch_json);
+	HTTP.on("/scanwifi.json", HTTP_GET, scanwifi_json);
 	HTTP.on("/rf.json", HTTP_GET, rf_json);
-	HTTP.on("/rf.xml", HTTP_GET, rf_xml);
     HTTP.on("/rf.htm", HTTP_GET, [](){HTTP.send(200, "text/html", rfIndex);});
     HTTP.on("/ip.htm", HTTP_GET, [](){HTTP.send(200, "text/html", ipIndex);});
-    HTTP.on("/help.htm", HTTP_GET, [](){HTTP.send(200, "text/html", helpIndex);});
+    HTTP.on("/help", HTTP_GET, [](){HTTP.send(200, "text/html", helpIndex);});
 	HTTP.on("/mem", HTTP_GET, mem_set);
-	HTTP.on("/default", HTTP_GET, smart_res);
+	HTTP.on("/default", HTTP_GET, [](){
+		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
+		hold(5000);
+		smart_res();
+		});
+	HTTP.on("/reboot", HTTP_GET, [](){
+		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
+		hold(5000);
+		ESP.restart();
+		hold(500);
+		});
     HTTP.on("/upgrade", HTTP_GET, [](){HTTP.send(200, "text/html", upgradeIndex);});
     HTTP.on("/update", HTTP_POST, [](){
 		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
-		delay(5000);
+		hold(5000);
 		ESP.restart();
-		delay(500);
+		hold(500);
     },[](){
 		HTTPUpload& upload = HTTP.upload();
 		if(upload.status == UPLOAD_FILE_START){

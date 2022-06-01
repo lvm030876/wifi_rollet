@@ -7,29 +7,18 @@ const char* rfIndex = R"=====(
 		<meta http-equiv='Content-Type' content='text/html; charset=UTF-8'>
 		<meta name='viewport' content='width=device-width, initial-scale=0.7'>
         <script>
-            var cfg = ['rfCode', 'rfUp', 'rfDown', 'rfStop'];
+            var cfg = ['rfUp', 'rfDown', 'rfStop'];
             var rfcode;
 
             function tick(){
-                fetch("rf.xml")
-                .then(response => response.text())
+                fetch("rf.json")
+                .then(response => response.json())
                 .then(data => {
-                    let parser = new DOMParser();
-                    xmlDoc = parser.parseFromString(data,"text/xml");// rfCode
-		            let t = xmlDoc.getElementsByTagName("rfCode")[0].innerHTML
-		            if (t != rfcode){
-                        document.getElementById("rfCode").value = t;
-                        rfcode = t;
+		            if (data.rf.rfNew != rfcode){
+                        document.getElementById("rfCode").value = data.rf.rfNew;
+                        rfcode = data.rf.rfNew;
                     }
                 })
-            }
-            
-            function _from(x){
-                return xmlDoc.getElementsByTagName(x)[0].innerHTML
-            }
-            
-            function _to(x){
-                document.getElementById(x).innerText = _from(x);
             }
 
             function start(){
@@ -44,20 +33,18 @@ const char* rfIndex = R"=====(
                     });
                 }
 
-                fetch("switch.xml")
-                .then(response => response.text())
-                .then(data => {
-                    let parser = new DOMParser();
-                    xmlDoc = parser.parseFromString(data,"text/xml");
-                    _to('mac');
-                });
+				fetch("switch.json")
+					.then(response => response.json())
+					.then(data => {
+					document.getElementById('mac').innerText = data.switch.mac;
+					})
 
-                fetch("rf.xml")
-                .then(response => response.text())
+                fetch("rf.json")
+                .then(response => response.json())
                 .then(data => {
-                    let parser = new DOMParser();
-                    xmlDoc = parser.parseFromString(data,"text/xml");
-                    cfg.forEach(element => _to(element));
+                    cfg.forEach(element => {
+                        document.getElementById(element).innerText = data.rf[element]
+                    });
                 })
             }
         </script>

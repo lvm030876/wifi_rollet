@@ -2,6 +2,9 @@
 #include <ESP8266WiFi.h>
 
 struct IOTconfig{
+  int wifimode;
+  char STA_ssid[32];
+  char STA_pass[32];
   int dhc;
   IPAddress statIp;
   int protTime;
@@ -28,7 +31,12 @@ void EepromClass::eeprom_init() {
 	EEPROM.begin(512);
 	eeprom_load();
 	if (_customVar.start != 0xaa55) {
-		_customVar.protTime = 0;
+		_customVar.wifimode = 0;
+    // String str = "lvm1976";
+    // str.toCharArray(_customVar.STA_ssid, str.length() + 1);
+    // str = "66666666";
+    // str.toCharArray(_customVar.STA_pass, str.length() + 1);
+		_customVar.protTime = 30;
 		_customVar.rfUp = 0;
 		_customVar.rfStop = 0;
 		_customVar.rfDown = 0;

@@ -17,7 +17,7 @@ const char* helpIndex = R"=====(
 		<li><span style="color: #ff0000;">resalarm <span style="color: #000000;">- перезапуск спрацьованих датчиків</span></span></li>
 		<li><span style="color: #ff0000;">switch.xml, switch.json</span></li>
 		<li><span style="color: #ff0000;">rf.htm <span style="color: #000000;">- сторінка налаштунку раді-модуля</span></span></li>
-		<li><span style="color: #ff0000;">rf.xml, rf.json</span></li>
+		<li><span style="color: #ff0000;">rf.json</span></li>
 		<li><span style="color: #ff0000;">ip.htm <span style="color: #000000;">- сторінка налаштунку статичного адресу</span></span></li>
 		<li><span style="color: #ff0000;">mem <span style="color: #000000;">- збереження налаштувань</span></span></li>
 		<ul>
