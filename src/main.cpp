@@ -3,43 +3,37 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266httpUpdate.h>
-// #include "WiFiManager.h"
 #include <WiFiUdp.h>
 #include "eepromapi.h"
 #include "relay.h"
 #include "RCSwitch.h"
-#include "INDEXhtm.h"
-#include "STYLEcss.h"
-#include "IPhtm.h"
-#include "RFhtm.h"
-#include "HELPhtm.h"
+#include "webgui.h"
 
 #define LED_PIN     2
 #define RESET_PIN   0
-#define ALARM_1     5
-#define ALARM_2     4
-#define SEN_PIN		1	//радіомодуль	1
-#define debugSerial Serial1
+#define ALARM_PIN	14
+#define RF_PIN		3	//радіомодуль	1
+#define debugSerial Serial
 
-int alarmStat1, alarmStat2;
+int alarmStat;
 unsigned long rfCode;
 int resetTick = 0;
 int udpTick = 0;
 
-const char* upgradeIndex = R"=====(<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>)=====";
-
 EepromClass eepromapi;
+IOTconfig customVar;
 RellayClass rellay;
 Ticker blinker, sensor, stopAll;
 ESP8266WebServer HTTP(80);
 RCSwitch mySwitch = RCSwitch();
 WiFiUDP udp;
 
-void sensorTik(void);
-void tickBlink(void);
-void smart_res(void);
-void startServer(void);
 void stop_all(String todo);
+
+void tickBlink() {
+	int state = digitalRead(LED_PIN);
+	digitalWrite(LED_PIN, !state);
+}
 
 void hold(const unsigned int &ms) {
 	unsigned long m = millis();
@@ -55,27 +49,18 @@ void AP_mode_default(){
 	nameDev = "ROLLET_" + nameDev;
 	char AP_ssid_default[32]; 
 	nameDev.toCharArray(AP_ssid_default, nameDev.length() + 1);
-	char AP_pass_default[32] = "12345678"; 
-	// int AP_channel_default  = 7;
-	// IPAddress AP_ip_default (10,1,1,1);
-	// IPAddress AP_gtw_default(10,1,1,1);
-	// IPAddress AP_net_default(255,0,0,0);
-
+	char AP_pass_default[32] = "12345678";
 	WiFi.mode(WIFI_OFF);
 	WiFi.softAP(AP_ssid_default, AP_pass_default);
-	// WiFi.softAP(AP_ssid_default, AP_pass_default, AP_channel_default);
-	// WiFi.setPhyMode(WIFI_PHY_MODE_11N);
-	// WiFi.softAPConfig(AP_ip_default, AP_gtw_default, AP_net_default);
 	digitalWrite(LED_PIN, HIGH);
+	debugSerial.println("AP started");
 }
 
-void STATION_mode(IOTconfig customVar){
+void STATION_mode(){
 	blinker.attach(0.5, tickBlink);
 	WiFi.mode(WIFI_OFF);
 	WiFi.mode(WIFI_STA);
-	// WiFi.config (STA_IP, STA_DNS, STA_GTW, STA_NET);
-	// String STA_host = "rollet_" + WiFi.macAddress();
-	// WiFi.hostname(STA_host);
+	WiFi.hostname("iot-rollet");
 	if (customVar.dhc == 0xaa55) {
 		IPAddress gateway = WiFi.gatewayIP();
 		IPAddress subnet = WiFi.subnetMask();
@@ -92,11 +77,9 @@ void STATION_mode(IOTconfig customVar){
 			// TROCA_REDE();
 		}
 	}
-	if (MDNS.begin("rollet_" + WiFi.macAddress(), WiFi.localIP())) {
-		debugSerial.println("MDNS responder started");
-	}
 	blinker.detach();
 	digitalWrite(LED_PIN, HIGH);
+	debugSerial.println("\n STA started");
 }
 
 void scanwifi_json() {
@@ -132,29 +115,6 @@ void scanwifi_json() {
 	WiFi.scanDelete();
 }
 
-void sensorTik() {
-	if (alarmStat1 == 0) alarmStat1 = digitalRead(ALARM_1);
-	if (alarmStat2 == 0) alarmStat2 = digitalRead(ALARM_2);
-	if (digitalRead(RESET_PIN) == 0) {
-		if (resetTick++ > 100) smart_res();
-	} else resetTick = 0;
-	if (mySwitch.available()) {
-		rfCode = mySwitch.getReceivedValue();
-		if (rfCode > 0) {
-			IOTconfig customVar = eepromapi.eeprom_get();
-			if (rfCode == customVar.rfUp)  stop_all("up");
-			if (rfCode == customVar.rfStop)  stop_all("stop");
-			if (rfCode == customVar.rfDown)  stop_all("down");
-		}
-		mySwitch.resetAvailable();
-	}
-}
-
-void tickBlink() {
-	int state = digitalRead(LED_PIN);
-	digitalWrite(LED_PIN, !state);
-}
-
 void smart_res() {
 	debugSerial.println("Reset devise");
 	WiFi.disconnect(true);
@@ -164,57 +124,7 @@ void smart_res() {
 	ESP.reset();
 }
 
-void switch_xml() {
-	IOTconfig customVar = eepromapi.eeprom_get();
-	String swStat = rellay.getStatus();
-	String swOldStat = rellay.getOldStatus();
-	String relayXml = "<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n<switch>\n\t<mac>"
-		+ WiFi.macAddress()
-		+ "</mac>\n\t<move>" + swStat
-		+ "</move>\n\t<oldMove>" + swOldStat
-		+ "</oldMove>\n\t<protTime>" + customVar.protTime
-		+ "</protTime>\n\t<alarm1>" + alarmStat1
-		+ "</alarm1>\n\t<alarm2>" + alarmStat2
-		+ "</alarm2>\n\t<RSSI>" + WiFi.RSSI()
-		+ "</RSSI>\n</switch>";	
-	HTTP.send(200,"text/xml",relayXml);
-}
-
-void switch_json() {
-	IOTconfig customVar = eepromapi.eeprom_get();
-	String swStat = rellay.getStatus();
-	String swOldStat = rellay.getOldStatus();
-	String relayJson = "{\"switch\": {\"mac\":\""
-		+ WiFi.macAddress()
-		+ "\",\"move\":\"" + swStat
-		+ "\",\"oldMove\":\"" + swOldStat
-		+ "\",\"protTime\":" + customVar.protTime
-		+ ",\"alarm1\":" + alarmStat1
-		+ ",\"alarm2\":" + alarmStat2
-		+ ",\"RSSI\":" + WiFi.RSSI()
-		+ "}}";	
-	HTTP.send(200,"application/json",relayJson);
-}
-
-void rf_json() {
-	IOTconfig customVar = eepromapi.eeprom_get();
-	String rfJson = "{\"rf\": {\"rfNew\":"
-		+ String(rfCode, DEC)
-		+ ",\"rfUp\":" + customVar.rfUp
-		+ ",\"rfDown\":" + customVar.rfDown
-		+ ",\"rfStop\":" + customVar.rfStop
-		+ "}}";	
-	HTTP.send(200,"application/json",rfJson);
-}
-
-void reset_alarm() {
-	HTTP.send(200,"application/json","{\"status\":\"ok\"}");
-	alarmStat1 = 0;
-	alarmStat2 = 0;
-}
-
 void stop_all(String todo){
-	IOTconfig customVar = eepromapi.eeprom_get();
 	rellay.rellay(todo);
 	if (todo == "stop") stopAll.detach();
 	else if (customVar.protTime > 0) stopAll.attach(customVar.protTime, [](){stop_all("stop");});
@@ -227,8 +137,62 @@ void switch_web() {
 		if (todo == "up") stop_all("up");
 		if (todo == "stop") stop_all("stop");
 		if (todo == "down") stop_all("down");
-		rellay.rellay(HTTP.arg("rollet"));
 	}
+}
+
+void sensorTik() {
+	if (alarmStat == 0) alarmStat = digitalRead(ALARM_PIN);
+	if (digitalRead(RESET_PIN) == 0) {
+		if (resetTick++ > 100) smart_res();
+	} else resetTick = 0;
+	if (mySwitch.available()) {
+		rfCode = mySwitch.getReceivedValue();
+		if (rfCode > 0) {
+			if (rfCode == customVar.rfUp)  stop_all("up");
+			if (rfCode == customVar.rfStop)  stop_all("stop");
+			if (rfCode == customVar.rfDown)  stop_all("down");
+		}
+		mySwitch.resetAvailable();
+	}
+}
+
+void switch_xml() {
+	String relayXml = "<?xml version=\"1.0\" encoding=\"windows-1251\"?>\n<switch>\n\t<mac>"
+		+ WiFi.macAddress()
+		+ "</mac>\n\t<move>" + rellay.getStatus()
+		+ "</move>\n\t<oldMove>" + rellay.getOldStatus()
+		+ "</oldMove>\n\t<protTime>" + customVar.protTime
+		+ "</protTime>\n\t<alarm>" + alarmStat
+		+ "</alarm>\n\t<RSSI>" + WiFi.RSSI()
+		+ "</RSSI>\n</switch>";	
+	HTTP.send(200,"text/xml",relayXml);
+}
+
+void switch_json() {
+	String relayJson = "{\"switch\": {\"mac\":\""
+		+ WiFi.macAddress()
+		+ "\",\"move\":\"" + rellay.getStatus()
+		+ "\",\"oldMove\":\"" + rellay.getOldStatus()
+		+ "\",\"protTime\":" + customVar.protTime
+		+ ",\"alarm\":" + alarmStat
+		+ ",\"RSSI\":" + WiFi.RSSI()
+		+ "}}";	
+	HTTP.send(200,"application/json",relayJson);
+}
+
+void rf_json() {
+	String rfJson = "{\"rf\": {\"rfNew\":"
+		+ String(rfCode, DEC)
+		+ ",\"rfUp\":" + customVar.rfUp
+		+ ",\"rfDown\":" + customVar.rfDown
+		+ ",\"rfStop\":" + customVar.rfStop
+		+ "}}";	
+	HTTP.send(200,"application/json",rfJson);
+}
+
+void reset_alarm() {
+	HTTP.send(200,"application/json","{\"status\":\"ok\"}");
+	alarmStat = 0;
 }
 
 void mem_set() {
@@ -236,7 +200,6 @@ void mem_set() {
 	boolean flag = false;
 	boolean rst = false;
 	HTTP.send(200,"application/json","{\"status\":\"ok\"}");
-	IOTconfig customVar = eepromapi.eeprom_get();
 	if (HTTP.arg("ipStat") != "") {
 		flag = true;
 		IPAddress ip;
@@ -293,13 +256,13 @@ void startServer() {
     HTTP.on("/", HTTP_GET, [](){HTTP.send(200, "text/html", homeIndex);});
     HTTP.on("/style.css", HTTP_GET, [](){HTTP.send(200, "text/css", style);});
 	HTTP.on("/switch", HTTP_GET, switch_web);
-	HTTP.on("/resalarm", HTTP_GET, reset_alarm);
 	HTTP.on("/switch.xml", HTTP_GET, switch_xml);
 	HTTP.on("/switch.json", HTTP_GET, switch_json);
-	HTTP.on("/scanwifi.json", HTTP_GET, scanwifi_json);
-	HTTP.on("/rf.json", HTTP_GET, rf_json);
+	HTTP.on("/resalarm", HTTP_GET, reset_alarm);
     HTTP.on("/rf.htm", HTTP_GET, [](){HTTP.send(200, "text/html", rfIndex);});
+	HTTP.on("/rf.json", HTTP_GET, rf_json);
     HTTP.on("/ip.htm", HTTP_GET, [](){HTTP.send(200, "text/html", ipIndex);});
+	HTTP.on("/scanwifi.json", HTTP_GET, scanwifi_json);
     HTTP.on("/help", HTTP_GET, [](){HTTP.send(200, "text/html", helpIndex);});
 	HTTP.on("/mem", HTTP_GET, mem_set);
 	HTTP.on("/default", HTTP_GET, [](){
@@ -315,6 +278,7 @@ void startServer() {
 		});
     HTTP.on("/upgrade", HTTP_GET, [](){HTTP.send(200, "text/html", upgradeIndex);});
     HTTP.on("/update", HTTP_POST, [](){
+		HTTP.sendHeader("Connection", "close");
 		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
 		hold(5000);
 		ESP.restart();
@@ -323,6 +287,7 @@ void startServer() {
 		HTTPUpload& upload = HTTP.upload();
 		if(upload.status == UPLOAD_FILE_START){
 			debugSerial.setDebugOutput(true);
+			WiFiUDP::stopAll();
 			debugSerial.printf("Update: %s\n", upload.filename.c_str());
 			uint32_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
 			if(!Update.begin(maxSketchSpace)){
@@ -343,28 +308,33 @@ void startServer() {
 		yield();
     });
 	HTTP.begin();
+	debugSerial.println("server started");
 }
 
 void setup() {
-	debugSerial.begin(115200);
+	debugSerial.begin(115200, SERIAL_8N1, SERIAL_TX_ONLY);
 	debugSerial.println("\n start");
 	pinMode(LED_PIN, OUTPUT);
 	digitalWrite(LED_PIN, LOW);
 	pinMode(RESET_PIN, INPUT);
-	pinMode(ALARM_1, INPUT_PULLUP);
-	pinMode(ALARM_2, INPUT_PULLUP);
-	mySwitch.enableReceive(SEN_PIN);
+	pinMode(ALARM_PIN, INPUT_PULLUP);
+	mySwitch.enableReceive(RF_PIN);
 	eepromapi.eeprom_init();
 	sensor.attach(0.1, sensorTik);
-	IOTconfig customVar = eepromapi.eeprom_get();
+	customVar = eepromapi.eeprom_get();
 	if (customVar.wifimode == 0) AP_mode_default();
-	else STATION_mode(customVar);
+	else STATION_mode();
+	if (MDNS.begin("iot-rollet", WiFi.localIP())) {
+		debugSerial.println("\n MDNS responder started, name is http://iot-rollet.local/");
+	}
 	udp.begin(8266);
 	startServer();
+	MDNS.addService("http", "tcp", 80);
 }
 
 void loop() {
 	HTTP.handleClient();
+	MDNS.update();
 	int packetSize = udp.parsePacket();
 	if(packetSize) {
 		char packetBuffer[10];

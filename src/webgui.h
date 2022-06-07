@@ -1,3 +1,5 @@
+const char* upgradeIndex = R"=====(<form method='POST' action='/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form>)=====";
+
 const char* helpIndex = R"=====(
 <!DOCTYPE html>
 <html>

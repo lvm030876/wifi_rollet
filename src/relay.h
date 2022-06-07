@@ -1,6 +1,5 @@
 #define SWITCH_A 12
 #define SWITCH_B 13
-#define SWITCH_C 14
 
 class RellayClass {
 private:
@@ -20,7 +19,6 @@ RellayClass::RellayClass() {
     _oldStatus = "stop";
     pinMode(SWITCH_A, OUTPUT);
     pinMode(SWITCH_B, OUTPUT);
-    pinMode(SWITCH_C, OUTPUT);
     rellay("stop");
 };
 
