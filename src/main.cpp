@@ -76,10 +76,15 @@ void STATION_mode(IOTconfig customVar){
 	// WiFi.config (STA_IP, STA_DNS, STA_GTW, STA_NET);
 	// String STA_host = "rollet_" + WiFi.macAddress();
 	// WiFi.hostname(STA_host);
+	if (customVar.dhc == 0xaa55) {
+		IPAddress gateway = WiFi.gatewayIP();
+		IPAddress subnet = WiFi.subnetMask();
+		WiFi.config(customVar.statIp, gateway, subnet);
+	}
 	WiFi.begin(customVar.STA_ssid, customVar.STA_pass);
 	hold(100);
 	while (WiFi.status() != WL_CONNECTED){
-		debugSerial.print(".");
+		delay(250); debugSerial.print(".");
 		if(WiFi.status() == WL_NO_SSID_AVAIL){
 			// TROCA_REDE();
 		}
@@ -87,13 +92,7 @@ void STATION_mode(IOTconfig customVar){
 			// TROCA_REDE();
 		}
 	}
-
-	if (customVar.dhc == 0xaa55) {
-		IPAddress gateway = WiFi.gatewayIP();
-		IPAddress subnet = WiFi.subnetMask();
-		WiFi.config(customVar.statIp, gateway, subnet);
-	}
-	if (MDNS.begin("iot_home", WiFi.localIP())) {
+	if (MDNS.begin("rollet_" + WiFi.macAddress(), WiFi.localIP())) {
 		debugSerial.println("MDNS responder started");
 	}
 	blinker.detach();
@@ -131,45 +130,6 @@ void scanwifi_json() {
 	outStr += "]}";
 	HTTP.send(200,"application/json",outStr);
 	WiFi.scanDelete();
-}
-
-void setup() {
-	debugSerial.begin(115200);
-	debugSerial.println("\n start");
-	pinMode(LED_PIN, OUTPUT);
-	digitalWrite(LED_PIN, LOW);
-	pinMode(RESET_PIN, INPUT);
-	pinMode(ALARM_1, INPUT_PULLUP);
-	pinMode(ALARM_2, INPUT_PULLUP);
-	mySwitch.enableReceive(SEN_PIN);
-	eepromapi.eeprom_init();
-	sensor.attach(0.1, sensorTik);
-	IOTconfig customVar = eepromapi.eeprom_get();
-	if (customVar.wifimode == 0) AP_mode_default();
-	else STATION_mode(customVar);
-	udp.begin(8266);
-	startServer();
-}
-
-void loop() {
-	HTTP.handleClient();
-	MDNS.update();
-	int packetSize = udp.parsePacket();
-	if(packetSize) {
-		char packetBuffer[10];
-		udp.read(packetBuffer, 10);
-		String udpRead = packetBuffer;
-		if (udpRead.indexOf("Who") != -1){
-			char IP[] = "xxx.xxx.xxx.xxx";
-			WiFi.localIP().toString().toCharArray(IP, 16);
-			IPAddress broadcastIp = WiFi.localIP();
-			broadcastIp[3] = 255;
-			udp.beginPacket(broadcastIp, 8266);
-			udp.write("rollet: ");
-			udp.write(IP);
-			udp.endPacket();
-		}
-	}
 }
 
 void sensorTik() {
@@ -281,12 +241,9 @@ void mem_set() {
 		flag = true;
 		IPAddress ip;
 		ip.fromString(HTTP.arg("ipStat"));
-		IPAddress gateway = WiFi.gatewayIP();
-		IPAddress subnet = WiFi.subnetMask();
-		hold(1000);
-		WiFi.config(ip, gateway, subnet);
 		customVar.statIp = ip;
 		customVar.dhc = 0xaa55;
+		rst = true;
 	}
 	if (HTTP.arg("ssid") != "") {
 		flag = true;
@@ -346,12 +303,12 @@ void startServer() {
     HTTP.on("/help", HTTP_GET, [](){HTTP.send(200, "text/html", helpIndex);});
 	HTTP.on("/mem", HTTP_GET, mem_set);
 	HTTP.on("/default", HTTP_GET, [](){
-		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
+		HTTP.send(200, "text/plain", "OK");
 		hold(5000);
 		smart_res();
 		});
 	HTTP.on("/reboot", HTTP_GET, [](){
-		HTTP.send(200, "text/plain", (Update.hasError())?"FAIL":"OK");
+		HTTP.send(200, "text/plain", "OK");
 		hold(5000);
 		ESP.restart();
 		hold(500);
@@ -386,4 +343,42 @@ void startServer() {
 		yield();
     });
 	HTTP.begin();
+}
+
+void setup() {
+	debugSerial.begin(115200);
+	debugSerial.println("\n start");
+	pinMode(LED_PIN, OUTPUT);
+	digitalWrite(LED_PIN, LOW);
+	pinMode(RESET_PIN, INPUT);
+	pinMode(ALARM_1, INPUT_PULLUP);
+	pinMode(ALARM_2, INPUT_PULLUP);
+	mySwitch.enableReceive(SEN_PIN);
+	eepromapi.eeprom_init();
+	sensor.attach(0.1, sensorTik);
+	IOTconfig customVar = eepromapi.eeprom_get();
+	if (customVar.wifimode == 0) AP_mode_default();
+	else STATION_mode(customVar);
+	udp.begin(8266);
+	startServer();
+}
+
+void loop() {
+	HTTP.handleClient();
+	int packetSize = udp.parsePacket();
+	if(packetSize) {
+		char packetBuffer[10];
+		udp.read(packetBuffer, 10);
+		String udpRead = packetBuffer;
+		if (udpRead.indexOf("Who") != -1){
+			char IP[] = "xxx.xxx.xxx.xxx";
+			WiFi.localIP().toString().toCharArray(IP, 16);
+			IPAddress broadcastIp = WiFi.localIP();
+			broadcastIp[3] = 255;
+			udp.beginPacket(broadcastIp, 8266);
+			udp.write("rollet: ");
+			udp.write(IP);
+			udp.endPacket();
+		}
+	}
 }

@@ -15,12 +15,12 @@ const char* homeIndex = R"=====(
 				fetch("switch.json")
 					.then(response => response.json())
 					.then(data => {
-					document.getElementById('mac').innerText = data.switch.mac;
-					xml_to_css("up", data.switch.move);
-					xml_to_css("stop", data.switch.move);
-					xml_to_css("down", data.switch.move);
+						document.getElementById('mac').innerText = data.switch.mac;
+						xml_to_css("up", data.switch.move);
+						xml_to_css("stop", data.switch.move);
+						xml_to_css("down", data.switch.move);
+						setTimeout(displaySwitch, 500);
 					})
-				setTimeout('displaySwitch()',500);
 			};
 			function switch_do(todo){
 				fetch("switch?rollet="+todo);

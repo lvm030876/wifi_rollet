@@ -9,7 +9,6 @@ const char* rfIndex = R"=====(
         <script>
             var cfg = ['rfUp', 'rfDown', 'rfStop'];
             var rfcode;
-
             function tick(){
                 fetch("rf.json")
                 .then(response => response.json())
@@ -18,34 +17,28 @@ const char* rfIndex = R"=====(
                         document.getElementById("rfCode").value = data.rf.rfNew;
                         rfcode = data.rf.rfNew;
                     }
+                    cfg.forEach(element => {
+                        document.getElementById(element).innerText = data.rf[element]
+                    });
+                    setTimeout(tick, 500);
                 })
             }
-
             function start(){
-		        setInterval(tick, 500);
+		        tick();
                 var allButtons = document.querySelectorAll('.rfcode>button');
                 for (var i = 0; i < allButtons.length; i++) {
                     allButtons[i].addEventListener('click', function() {
                         let a = document.getElementById('rfCode').value;
                         fetch("mem?"+this.id+"="+a)
-                        .then(response => response.json())
-                        .then(data => this.innerText = a);
+                            .then(response => response.json())
+                            .then(data => this.innerText = a);
                     });
                 }
-
 				fetch("switch.json")
 					.then(response => response.json())
 					.then(data => {
-					document.getElementById('mac').innerText = data.switch.mac;
+					    document.getElementById('mac').innerText = data.switch.mac;
 					})
-
-                fetch("rf.json")
-                .then(response => response.json())
-                .then(data => {
-                    cfg.forEach(element => {
-                        document.getElementById(element).innerText = data.rf[element]
-                    });
-                })
             }
         </script>
 	</head>

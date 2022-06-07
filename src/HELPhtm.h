@@ -29,7 +29,7 @@ const char* helpIndex = R"=====(
 					<li><div>pass - пароль доступу до wifi</div></li>
 				</ul>
 				<li><span style="color: #ff0000;">default <span style="color: #000000;">- онулення налаштувань пристрою</span></span></li>
-				<li><span style="color: #ff0000;">куищще <span style="color: #000000;">- перезавантаження пристрою</span></span></li>
+				<li><span style="color: #ff0000;">reboot <span style="color: #000000;">- перезавантаження пристрою</span></span></li>
 			</ul>
 		</div>
 	</body>

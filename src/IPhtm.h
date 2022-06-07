@@ -23,15 +23,16 @@ const char* ipIndex = R"=====(
 							outstr += "<div>" + i.rssi + "</div>";
 						})
 						block.innerHTML = outstr;
+						setTimeout(tick, 500);
 					})
 			}
             function start(){
-				setInterval(tick, 3000);
+				tick();
                 document.getElementById("ipStat").value = window.location.host.toString();
 				fetch("switch.json")
 					.then(response => response.json())
 					.then(data => {
-					document.getElementById('mac').innerText = data.switch.mac;
+						document.getElementById('mac').innerText = data.switch.mac;
 					})
             }
             function ipSet(){
@@ -42,12 +43,11 @@ const char* ipIndex = R"=====(
 				if (ipStat != "") s += "ipStat=" + ipStat + "&";
 				if (ssid != "") s += "ssid=" + ssid + "&";
 				if (pass != "") s += "pass=" + pass + "&";
-                fetch(s)
-	            .then(response => {
-                    console.log(response.json());
-                    if (ipStat != window.location.host.toString()) location.href = 'http://' + ipStat + '/';
+                fetch(s).then(response => {
+					console.log(response.json());
+					if (ipStat != window.location.host.toString()) location.href = 'http://' + ipStat + '/';
 					else location.href = '/'
-                    });
+				});
             }
         </script>
 	</head>
